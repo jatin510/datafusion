@@ -32,7 +32,8 @@ use datafusion_common::cast::as_boolean_array;
 use datafusion_common::{exec_err, internal_err, DataFusionError, Result, ScalarValue};
 use datafusion_expr::ColumnarValue;
 
-use super::{Column, Literal};
+use datafusion_physical_expr_common::expressions::column::Column;
+use datafusion_physical_expr_common::expressions::Literal;
 use itertools::Itertools;
 
 type WhenThen = (Arc<dyn PhysicalExpr>, Arc<dyn PhysicalExpr>);
@@ -261,8 +262,8 @@ impl CaseExpr {
     /// END
     fn case_when_no_expr(&self, batch: &RecordBatch) -> Result<ColumnarValue> {
         let return_type = self.data_type(&batch.schema())?;
-
-        let start = std::time::Instant::now();
+        println!("yoyo");
+        println!(" record batch {:?}", self);
         // start with nulls as default output
         let mut current_value = new_null_array(&return_type, batch.num_rows());
         let mut remainder = BooleanArray::from(vec![true; batch.num_rows()]);
@@ -270,7 +271,6 @@ impl CaseExpr {
             let when_value = self.when_then_expr[i]
                 .0
                 .evaluate_selection(batch, &remainder)?;
-            println!("when_value {:?}", when_value);
             let when_value = when_value.into_array(batch.num_rows())?;
             let when_value = as_boolean_array(&when_value).map_err(|e| {
                 DataFusionError::Context(
@@ -283,7 +283,6 @@ impl CaseExpr {
                 0 => Cow::Borrowed(when_value),
                 _ => Cow::Owned(prep_null_mask_filter(when_value)),
             };
-            println!("when_value in cow {:?}", when_value);
             // Make sure we only consider rows that have not been matched yet
             let when_value = and(&when_value, &remainder)?;
 
@@ -322,9 +321,6 @@ impl CaseExpr {
                 .into_array(batch.num_rows())?;
             current_value = zip(&remainder, &else_, &current_value)?;
         }
-
-        let end = start.elapsed();
-        println!("Time elapsed in case_when_no_expr() is: {:?}", end);
 
         Ok(ColumnarValue::Array(current_value))
     }
@@ -553,8 +549,8 @@ pub fn case(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use crate::expressions::{binary, cast, col, lit, BinaryExpr};
+
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType::Float64;
     use arrow::datatypes::*;
@@ -563,6 +559,7 @@ mod tests {
     use datafusion_common::tree_node::{Transformed, TransformedResult, TreeNode};
     use datafusion_expr::type_coercion::binary::comparison_coercion;
     use datafusion_expr::Operator;
+    use datafusion_physical_expr_common::expressions::Literal;
 
     #[test]
     fn case_with_expr() -> Result<()> {
@@ -754,10 +751,15 @@ mod tests {
             .evaluate(&batch)?
             .into_array(batch.num_rows())
             .expect("Failed to convert to array");
+        println!("result {:?}", result);
+
         let result = as_int32_array(&result)?;
+
+        println!("result {:?}", result);
 
         let expected = &Int32Array::from(vec![Some(123), None, None, Some(456)]);
 
+        println!("result {:?}", result);
 
         // assert_eq!(expected, result);
 
@@ -1215,7 +1217,7 @@ mod tests {
             if i % 7 == 0 {
                 c2.append_null();
             } else {
-                c2.append_value(format!("string {i}"));
+                c2.append_value(&format!("string {i}"));
             }
         }
         let c1 = Arc::new(c1.finish());
