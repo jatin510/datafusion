@@ -75,6 +75,8 @@ use datafusion::physical_plan::joins::{
 };
 use datafusion::physical_plan::joins::{HashJoinExec, PartitionMode};
 use datafusion::physical_plan::limit::{GlobalLimitExec, LocalLimitExec};
+use datafusion::physical_plan::memory::LazyMemoryExec;
+
 use datafusion::physical_plan::placeholder_row::PlaceholderRowExec;
 use datafusion::physical_plan::projection::ProjectionExec;
 use datafusion::physical_plan::repartition::RepartitionExec;
@@ -331,6 +333,13 @@ impl AsExecutionPlan for protobuf::PhysicalPlanNode {
                     runtime,
                     extension_codec,
                 ),
+            PhysicalPlanType::LazyMemory(lazy_memory) => self
+                .try_into_lazy_memory_physical_plan(
+                    lazy_memory,
+                    registry,
+                    runtime,
+                    extension_codec,
+                ),
         }
     }
 
@@ -522,6 +531,13 @@ impl AsExecutionPlan for protobuf::PhysicalPlanNode {
 
         if let Some(exec) = plan.downcast_ref::<CooperativeExec>() {
             return protobuf::PhysicalPlanNode::try_from_cooperative_exec(
+                exec,
+                extension_codec,
+            );
+        }
+
+        if let Some(exec) = plan.downcast_ref::<LazyMemoryExec>() {
+            return protobuf::PhysicalPlanNode::try_from_lazy_memory_exec(
                 exec,
                 extension_codec,
             );
@@ -1806,6 +1822,29 @@ impl protobuf::PhysicalPlanNode {
         Ok(Arc::new(CooperativeExec::new(input)))
     }
 
+    fn try_into_lazy_memory_physical_plan(
+        &self,
+        lazy_memory: &protobuf::LazyMemoryExecNode,
+        _registry: &dyn FunctionRegistry,
+        _runtime: &RuntimeEnv,
+        _extension_codec: &dyn PhysicalExtensionCodec,
+    ) -> Result<Arc<dyn ExecutionPlan>> {
+        // For LazyMemoryExec, we need to reconstruct the execution plan
+        // Since the batch generators can't be easily deserialized,
+        // we'll create a placeholder that indicates this is a LazyMemoryExec
+        // The actual data will need to be reconstructed on the receiving end
+        
+        let _schema: SchemaRef = Arc::new(convert_required!(lazy_memory.schema)?);
+
+        // For now, we'll return an error indicating that LazyMemoryExec deserialization
+        // is not fully implemented yet, as it requires reconstructing the batch generators
+        // which is complex and depends on the specific generator implementation
+        Err(DataFusionError::NotImplemented(
+            "LazyMemoryExec deserialization is not yet fully implemented. \
+             The batch generators need to be reconstructed on the receiving end.".to_string(),
+        ))
+    }
+
     fn try_from_explain_exec(
         exec: &ExplainExec,
         _extension_codec: &dyn PhysicalExtensionCodec,
@@ -2803,6 +2842,51 @@ impl protobuf::PhysicalPlanNode {
                     input: Some(Box::new(input)),
                 },
             ))),
+        })
+    }
+
+    fn try_from_lazy_memory_exec(
+        exec: &LazyMemoryExec,
+        _extension_codec: &dyn PhysicalExtensionCodec,
+    ) -> Result<Self> {
+        // For LazyMemoryExec, we need to serialize the schema and ordering information
+        // Since LazyMemoryExec uses batch generators that can't be easily serialized,
+        // we'll create a placeholder that indicates this is a LazyMemoryExec
+        // The actual data will need to be reconstructed on the receiving end
+        
+        let schema = exec.schema();
+        let properties = exec.properties();
+        
+        // Get the ordering information from the equivalence properties
+        let orderings = properties.eq_properties.oeq_class();
+        let sort_exprs = orderings
+            .iter()
+            .map(|ordering| {
+                ordering
+                    .iter()
+                    .map(|sort_expr| {
+                        let expr = serialize_physical_expr(&sort_expr.expr, _extension_codec)?;
+                        Ok(protobuf::PhysicalSortExprNode {
+                            expr: Some(Box::new(expr)),
+                            asc: !sort_expr.options.descending,
+                            nulls_first: sort_expr.options.nulls_first,
+                        })
+                    })
+                    .collect::<Result<Vec<_>>>()
+                    .map(|exprs| protobuf::PhysicalSortExprNodeCollection {
+                        physical_sort_expr_nodes: exprs,
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(protobuf::PhysicalPlanNode {
+            physical_plan_type: Some(PhysicalPlanType::LazyMemory(
+                protobuf::LazyMemoryExecNode {
+                    schema: Some(schema.as_ref().try_into()?),
+                    sort_exprs,
+                    partition_count: exec.properties().output_partitioning().partition_count() as u32,
+                },
+            )),
         })
     }
 }

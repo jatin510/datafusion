@@ -1048,7 +1048,7 @@ pub mod table_reference {
 pub struct PhysicalPlanNode {
     #[prost(
         oneof = "physical_plan_node::PhysicalPlanType",
-        tags = "1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32"
+        tags = "1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33"
     )]
     pub physical_plan_type: ::core::option::Option<physical_plan_node::PhysicalPlanType>,
 }
@@ -1120,6 +1120,8 @@ pub mod physical_plan_node {
         JsonScan(super::JsonScanExecNode),
         #[prost(message, tag = "32")]
         Cooperative(::prost::alloc::boxed::Box<super::CooperativeExecNode>),
+        #[prost(message, tag = "33")]
+        LazyMemory(super::LazyMemoryExecNode),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -1577,6 +1579,15 @@ pub struct AvroScanExecNode {
 pub struct CooperativeExecNode {
     #[prost(message, optional, boxed, tag = "1")]
     pub input: ::core::option::Option<::prost::alloc::boxed::Box<PhysicalPlanNode>>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LazyMemoryExecNode {
+    #[prost(message, optional, tag = "1")]
+    pub schema: ::core::option::Option<super::datafusion_common::Schema>,
+    #[prost(message, repeated, tag = "2")]
+    pub sort_exprs: ::prost::alloc::vec::Vec<PhysicalSortExprNodeCollection>,
+    #[prost(uint32, tag = "3")]
+    pub partition_count: u32,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct HashJoinExecNode {

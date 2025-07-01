@@ -727,6 +727,7 @@ message PhysicalPlanNode {
     UnnestExecNode unnest = 30;
     JsonScanExecNode json_scan = 31;
     CooperativeExecNode cooperative = 32;
+    LazyMemoryExecNode lazy_memory = 33;
   }
 }
 
@@ -1036,6 +1037,12 @@ message AvroScanExecNode {
 
 message CooperativeExecNode {
   PhysicalPlanNode input = 1;
+}
+
+message LazyMemoryExecNode {
+  datafusion_common.Schema schema = 1;
+  repeated PhysicalSortExprNodeCollection sort_exprs = 2;
+  uint32 partition_count = 3;
 }
 
 enum PartitionMode {
